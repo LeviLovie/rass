@@ -1,7 +1,7 @@
 use base64::prelude::*;
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader, Seek, SeekFrom},
+    io::{BufRead, BufReader},
     path::PathBuf,
 };
 use thiserror::Error;
@@ -165,12 +165,6 @@ impl Loader {
                 let data = String::from_utf8(data).map_err(|e| {
                     LoaderError::SyntaxError("Invalid UTF-8 data".to_string(), e.to_string())
                 })?;
-                println!(
-                    "Read {} bytes from file '{}': {:?}",
-                    data.len(),
-                    file_name,
-                    data
-                );
                 let decoded = BASE64_STANDARD.decode(data).map_err(|e| {
                     LoaderError::SyntaxError("Failed to decode base64".to_string(), e.to_string())
                 })?;
