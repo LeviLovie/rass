@@ -5,7 +5,7 @@ license = "MIT OR Apache-2.0"
 homepage = "https://github.com/LeviLovie/rdss"
 repository = "https://github.com/LeviLovie/rdss"
 documentation = "https://docs.rs/rdss"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 
 [dependencies]
