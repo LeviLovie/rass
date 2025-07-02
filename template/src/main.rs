@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rass::prelude::*;
+use rass::*;
 
 fn main() {
     if let Err(e) = try_main() {
@@ -18,12 +18,11 @@ fn try_main() -> Result<()> {
 
     let mut loader = Loader::new("assets.rass");
     loader.load().context("Failed to load binary")?;
-    for (file, _) in loader.files() {
-        let content = loader
+    for file in loader.files() {
+        let contents = loader
             .read(&file)
-            .context(format!("Failed to read file {}", file))?
-            .replace("\n", "\\n");
-        println!("{}: {}", file, content);
+            .context(format!("Failed to read {file}"))?;
+        println!("{}: {}", file, contents.replace("\n", "\\n"));
     }
 
     Ok(())

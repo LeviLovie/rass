@@ -1,6 +1,7 @@
-use base64::prelude::*;
-use std::{io::prelude::*, path::PathBuf};
+use std::path::PathBuf;
 use thiserror::Error;
+
+use crate::{write, Binary, File, Format};
 
 #[derive(Debug, Error)]
 pub enum CompilerBuilderError {
@@ -45,18 +46,20 @@ impl CompilerBuilder {
 
 #[derive(Debug, Error)]
 pub enum CompilerError {
-    #[error("The specified sources directory does not exist: {0}")]
-    SourcesDirDoesNotExist(PathBuf),
-    #[error("The specified binary path does not exist")]
-    BinaryFailedToCreate,
-    #[error("Failed to write to the binary file at {0}: {1}")]
-    FailedToWrite(PathBuf, String),
-    #[error("Failed to open the binary file at {0}: {1}")]
-    FailedToOpenBinary(PathBuf, String),
-    #[error("Failed to read the sources directory: {0}")]
-    SourcesEntryDoesNotExist(PathBuf),
-    #[error("Failed to read the source file at {0}: {1}")]
-    FailedToReadSource(PathBuf, String),
+    #[error("The specified sources path does not exist")]
+    SourcesDoNotExist,
+    #[error("Failed to read source {1}: {0}")]
+    FailedReadSource(std::io::Error, PathBuf),
+    #[error("Failed to get binary parent")]
+    FailedGetBinaryParent,
+    #[error("Failed to create binary: {0}")]
+    FailedCreateBinary(std::io::Error),
+    #[error("Failed to write {1}: {0}")]
+    FailedWrite(PathBuf, String),
+    #[error("Failed to open binary {1}: {0}")]
+    FailedOpenBinary(std::io::Error, PathBuf),
+    #[error("Failed to write contents: {0}")]
+    FailedWriteContents(std::io::Error),
 }
 
 pub struct Compiler {
@@ -75,56 +78,40 @@ impl Compiler {
             .write(true)
             .append(true)
             .open(self.binary.clone())
-            .map_err(|e| CompilerError::FailedToOpenBinary(self.binary.clone(), e.to_string()))?;
+            .map_err(|e| CompilerError::FailedOpenBinary(e, self.binary.clone()))?;
+        let mut writer = std::io::BufWriter::new(&mut file);
 
-        let mut index: u32 = 0;
-        self.write_bin(&mut file, &mut index, "RASS v")?;
-        self.write_bin(&mut file, &mut index, env!("CARGO_PKG_VERSION"))?;
-        self.write_bin(&mut file, &mut index, " (github.com/LeviLovie/rass)\n")?;
+        let mut format = Format::new();
+        let sources_raw = self.list_sources()?;
+        let mut contents = Vec::new();
 
-        let sources = self.list_sources()?;
-        let mut contents: Vec<String> = Vec::new();
-        let mut sources_vec: Vec<(String, u32, u32)> = Vec::new();
-        let mut sources_index: u32 = 0;
-        for source in sources {
-            let content =
-                BASE64_STANDARD.encode(std::fs::read_to_string(&source).map_err(|e| {
-                    CompilerError::FailedToReadSource(source.clone(), e.to_string())
-                })?);
-            contents.push(content.clone());
-            sources_vec.push((
-                BASE64_STANDARD.encode(source.display().to_string()),
-                sources_index,
-                content.len() as u32,
-            ));
-            sources_index += content.len() as u32;
+        let mut index: u64 = 0;
+        for source in &sources_raw {
+            let content = std::fs::read_to_string(&source)
+                .map_err(|e| CompilerError::FailedReadSource(e, source.clone()))?;
+            let size: u64 = content.len() as u64;
+            let path = Self::relative_path(source, &self.sources).ok_or_else(|| {
+                CompilerError::FailedReadSource(
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "Path not found"),
+                    source.clone(),
+                )
+            })?;
+            format.add_file(File::new(path, index, size));
+            contents.push(content);
+            index += size;
         }
 
-        for source in &sources_vec {
-            self.write_bin(
-                &mut file,
-                &mut index,
-                &format!("<{}:{}:{}>", source.0, source.1, source.2),
-            )?;
-        }
-        self.write_bin(&mut file, &mut index, "&")?;
+        format
+            .serialize(&mut writer)
+            .map_err(|e| CompilerError::FailedWrite(self.binary.clone(), e.to_string()))?;
 
-        for content in &contents {
-            self.write_bin(&mut file, &mut index, content)?;
+        for source in sources_raw {
+            let content = std::fs::read_to_string(&source)
+                .map_err(|e| CompilerError::FailedReadSource(e, source.clone()))?;
+            write::string_raw(&mut writer, &content)
+                .map_err(|e| CompilerError::FailedWriteContents(e))?;
         }
 
-        Ok(())
-    }
-
-    pub fn write_bin(
-        &self,
-        file: &mut std::fs::File,
-        index: &mut u32,
-        content: &str,
-    ) -> Result<(), CompilerError> {
-        *index += content.len() as u32;
-        file.write_all(content.as_bytes())
-            .map_err(|e| CompilerError::FailedToWrite(self.binary.clone(), e.to_string()))?;
         Ok(())
     }
 
@@ -132,41 +119,47 @@ impl Compiler {
         self.sources
             .exists()
             .then_some(())
-            .ok_or_else(|| CompilerError::SourcesDirDoesNotExist(self.sources.clone()))?;
+            .ok_or_else(|| CompilerError::SourcesDoNotExist)?;
 
         let binary_parent = self
             .binary
             .parent()
-            .ok_or_else(|| CompilerError::BinaryFailedToCreate)?;
+            .ok_or_else(|| CompilerError::FailedGetBinaryParent)?;
         if !binary_parent.exists() {
             std::fs::create_dir_all(binary_parent)
-                .map_err(|_| CompilerError::BinaryFailedToCreate)?;
+                .map_err(|e| CompilerError::FailedCreateBinary(e))?;
         }
         if self.binary.exists() {
-            std::fs::remove_file(&self.binary).map_err(|e| {
-                CompilerError::FailedToOpenBinary(self.binary.clone(), e.to_string())
-            })?;
+            std::fs::remove_file(&self.binary)
+                .map_err(|e| CompilerError::FailedOpenBinary(e, self.binary.clone()))?;
         }
         std::fs::File::create(&self.binary)
-            .map_err(|e| CompilerError::FailedToOpenBinary(self.binary.clone(), e.to_string()))?;
+            .map_err(|e| CompilerError::FailedOpenBinary(e, self.binary.clone()))?;
 
         Ok(())
     }
 
     pub fn list_sources(&self) -> Result<Vec<PathBuf>, CompilerError> {
         if !self.sources.exists() {
-            return Err(CompilerError::SourcesDirDoesNotExist(self.sources.clone()));
+            return Err(CompilerError::SourcesDoNotExist);
         }
 
         Ok(Self::list_files(&self.sources)?)
     }
 
+    fn relative_path(source: &PathBuf, base: &PathBuf) -> Option<String> {
+        source
+            .strip_prefix(base)
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+    }
+
     fn list_files(dir: &PathBuf) -> Result<Vec<PathBuf>, CompilerError> {
         let mut sources = Vec::new();
-        for entry in std::fs::read_dir(dir)
-            .map_err(|_| CompilerError::SourcesEntryDoesNotExist(dir.clone()))?
+        for entry in
+            std::fs::read_dir(dir).map_err(|e| CompilerError::FailedReadSource(e, dir.clone()))?
         {
-            let entry = entry.map_err(|_| CompilerError::SourcesEntryDoesNotExist(dir.clone()))?;
+            let entry = entry.map_err(|_| CompilerError::SourcesDoNotExist)?;
             let path = entry.path();
             if path.is_dir() {
                 sources.extend(Self::list_files(&path)?);
