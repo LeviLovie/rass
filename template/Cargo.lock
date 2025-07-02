@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rass"
+name = "rdss"
 version = "0.1.0"
 dependencies = [
  "thiserror",
@@ -49,7 +49,7 @@ name = "template"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "rass",
+ "rdss",
 ]
 
 [[package]]

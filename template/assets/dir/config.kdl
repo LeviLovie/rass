@@ -1,4 +1,4 @@
 package {
-  name my-pkg
+  name my-pkl
   version "1.2.3"
 }

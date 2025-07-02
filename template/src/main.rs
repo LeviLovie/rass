@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use rass::*;
 
 fn main() {
     if let Err(e) = try_main() {
@@ -9,14 +8,7 @@ fn main() {
 }
 
 fn try_main() -> Result<()> {
-    let compiler = Compiler::builder()
-        .from_sources("assets")
-        .save_to("assets.rass")
-        .build()
-        .context("Failed to build compiler")?;
-    compiler.compile().context("Compilation failed")?;
-
-    let mut loader = Loader::new("assets.rass");
+    let mut loader = rdss::Loader::new("assets.rass");
     loader.load().context("Failed to load binary")?;
     for file in loader.files() {
         let contents = loader
