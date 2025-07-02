@@ -50,6 +50,7 @@ impl Loader {
             Format::deserialize(&mut reader).map_err(LoaderError::DeserializationFailed)?;
 
         for file in format.files {
+            println!("Found file: {:#?}", file);
             self.files
                 .insert(file.path.clone(), (file.offset, file.size));
         }

@@ -87,7 +87,7 @@ impl Compiler {
 
         let mut index: u64 = 0;
         for source in &sources_raw {
-            let content = std::fs::read_to_string(&source)
+            let content = std::fs::read(&source)
                 .map_err(|e| CompilerError::FailedReadSource(e, source.clone()))?;
             let size: u64 = content.len() as u64;
             let path = Self::relative_path(source, &self.sources).ok_or_else(|| {
@@ -106,9 +106,9 @@ impl Compiler {
             .map_err(|e| CompilerError::FailedWrite(self.binary.clone(), e.to_string()))?;
 
         for source in sources_raw {
-            let content = std::fs::read_to_string(&source)
+            let content = std::fs::read(&source)
                 .map_err(|e| CompilerError::FailedReadSource(e, source.clone()))?;
-            write::string_raw(&mut writer, &content)
+            write::array_raw(&mut writer, &content)
                 .map_err(|e| CompilerError::FailedWriteContents(e))?;
         }
 

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 
 const ASSETS_DIR: &str = "assets";
-const ASSETS_FILE: &str = "assets.rass";
+const ASSETS_FILE: &str = "assets.rdss";
 
 fn main() -> Result<()> {
     let compiler = rdss::Compiler::builder()

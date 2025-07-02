@@ -27,3 +27,7 @@ pub fn array<W: Write>(writer: &mut W, value: &[u8]) -> Result<()> {
     u32(writer, value.len() as u32)?;
     writer.write_all(value)
 }
+
+pub fn array_raw<W: Write>(writer: &mut W, value: &[u8]) -> Result<()> {
+    writer.write_all(value)
+}
